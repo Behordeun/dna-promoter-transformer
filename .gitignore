@@ -6,4 +6,7 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 .history/
-.github/
+.qodo/
+.github/instructions/
+checkpoints/*.pt
+checkpoints/*.tmp

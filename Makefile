@@ -20,3 +20,4 @@ test:
 
 lint:
 	.venv/bin/ruff check src tests
+	.venv/bin/python -m mypy --strict src
