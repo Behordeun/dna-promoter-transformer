@@ -110,7 +110,7 @@ def train_human(
 
     if checkpoint_dir is not None:
         ckpt = checkpoint_dir / "human.pt"
-        save_checkpoint(model.cpu(), cfg, ckpt)
+        save_checkpoint(model, cfg, ckpt)
         (checkpoint_dir / "metrics.json").write_text(json.dumps(test, indent=2))
         print(f"saved checkpoint to {ckpt} and metrics to {checkpoint_dir / 'metrics.json'}")
 

@@ -24,6 +24,7 @@ jobs:
         run: |
           mkdir -p data
           curl -sL "https://archive.ics.uci.edu/static/public/67/molecular+biology+promoter+gene+sequences.zip" -o data/uci67.zip
+          echo "56d462fe7e27dfece24dd5033e2c359c604b5675f5ba448eb0a9ceb7284b4eb2  data/uci67.zip" | sha256sum -c -
           cd data && unzip -o uci67.zip >/dev/null
 
       - name: Ruff

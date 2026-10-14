@@ -84,14 +84,19 @@ class PromoterTransformer(nn.Module):
 
 
 def save_checkpoint(model: PromoterTransformer, cfg: Config, path: Path) -> None:
-    """Write weights plus the config needed to rebuild the architecture."""
+    """Write weights plus the config needed to rebuild the architecture.
+
+    The state dict is snapshotted to CPU here so saving never moves the
+    caller's model off its training device.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save({"config": asdict(cfg), "state_dict": model.state_dict()}, path)
+    cpu_state = {k: v.cpu() for k, v in model.state_dict().items()}
+    torch.save({"config": asdict(cfg), "state_dict": cpu_state}, path)
 
 
 def load_checkpoint(path: Path) -> tuple[PromoterTransformer, Config]:
     """Rebuild a model from a checkpoint written by save_checkpoint."""
-    blob = torch.load(path, map_location="cpu", weights_only=False)
+    blob = torch.load(path, map_location="cpu", weights_only=True)
     cfg = Config(**blob["config"])
     model = PromoterTransformer(cfg)
     model.load_state_dict(blob["state_dict"])
