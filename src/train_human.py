@@ -12,6 +12,8 @@ Run:
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 
 import torch
 from torch import nn
@@ -19,7 +21,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from src.data_human import SEQ_LEN, VOCAB_SIZE, load_human_promoters
 from src.device import get_device
-from src.model import Config, PromoterTransformer
+from src.model import Config, PromoterTransformer, save_checkpoint
 
 
 def _metrics(preds: torch.Tensor, y: torch.Tensor) -> dict[str, float]:
@@ -35,7 +37,9 @@ def _metrics(preds: torch.Tensor, y: torch.Tensor) -> dict[str, float]:
 
 
 @torch.no_grad()
-def _evaluate(model: nn.Module, loader: DataLoader, device: torch.device) -> dict[str, float]:
+def _evaluate(
+    model: nn.Module, loader: DataLoader[tuple[torch.Tensor, ...]], device: torch.device
+) -> dict[str, float]:
     model.eval()
     preds, ys = [], []
     for xb, yb in loader:
@@ -45,7 +49,12 @@ def _evaluate(model: nn.Module, loader: DataLoader, device: torch.device) -> dic
     return _metrics(torch.cat(preds), torch.cat(ys))
 
 
-def train_human(cfg: Config, val_frac: float = 0.1, patience: int = 3) -> dict[str, float]:
+def train_human(
+    cfg: Config,
+    val_frac: float = 0.1,
+    patience: int = 3,
+    checkpoint_dir: Path | None = None,
+) -> dict[str, float]:
     torch.manual_seed(cfg.seed)
     device = get_device()
     print(f"device: {device}")
@@ -98,6 +107,13 @@ def train_human(cfg: Config, val_frac: float = 0.1, patience: int = 3) -> dict[s
         f"\nHeld-out test: acc={test['acc']:.4f}  precision={test['precision']:.4f}  "
         f"recall={test['recall']:.4f}  f1={test['f1']:.4f}"
     )
+
+    if checkpoint_dir is not None:
+        ckpt = checkpoint_dir / "human.pt"
+        save_checkpoint(model.cpu(), cfg, ckpt)
+        (checkpoint_dir / "metrics.json").write_text(json.dumps(test, indent=2))
+        print(f"saved checkpoint to {ckpt} and metrics to {checkpoint_dir / 'metrics.json'}")
+
     return test
 
 
@@ -107,6 +123,12 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--d-model", type=int, default=64)
     parser.add_argument("--layers", type=int, default=2)
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=Path,
+        default=Path("checkpoints"),
+        help="where to save human.pt and metrics.json",
+    )
     args = parser.parse_args()
 
     cfg = Config(
@@ -122,7 +144,7 @@ def main() -> None:
         lr=5e-4,
         weight_decay=1e-3,
     )
-    train_human(cfg)
+    train_human(cfg, checkpoint_dir=args.checkpoint_dir)
 
 
 if __name__ == "__main__":

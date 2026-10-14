@@ -8,7 +8,8 @@ in a fixed-length window, which the -10 and -35 promoter boxes are.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import torch
 from torch import nn
@@ -40,8 +41,11 @@ class PromoterTransformer(nn.Module):
         # attention. Promoter signals are short local boxes (-10, -35), so a
         # small receptive field over the embedded sequence is the right prior
         # and is what makes a ~100-example set learnable.
+        # padding="same" keeps the conv output length equal to seq_len, so the
+        # sequence fed to the transformer is exactly seq_len + 1 (with CLS) and
+        # pos_embed matches it one-to-one. Any kernel size stays correct.
         self.conv = nn.Sequential(
-            nn.Conv1d(cfg.d_model, cfg.d_model, kernel_size=6, padding=2),
+            nn.Conv1d(cfg.d_model, cfg.d_model, kernel_size=7, padding="same"),
             nn.GELU(),
             nn.Dropout(cfg.dropout),
         )
@@ -65,8 +69,31 @@ class PromoterTransformer(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         b = x.size(0)
         h = self.token_embed(x)  # (b, L, d)
-        h = self.conv(h.transpose(1, 2)).transpose(1, 2)  # local motif features
+        h = self.conv(h.transpose(1, 2)).transpose(1, 2)  # local motif features, length preserved
         cls = self.cls_token.expand(b, -1, -1)
-        h = torch.cat([cls, h], dim=1) + self.pos_embed[:, : h.size(1) + 1, :]
+        h = torch.cat([cls, h], dim=1)
+        if h.size(1) != self.pos_embed.size(1):
+            raise ValueError(
+                f"sequence length {h.size(1)} does not match pos_embed "
+                f"{self.pos_embed.size(1)}; input length must equal Config.seq_len"
+            )
+        h = h + self.pos_embed
         h = self.encoder(h)
-        return self.head(self.norm(h[:, 0, :]))
+        logits: torch.Tensor = self.head(self.norm(h[:, 0, :]))
+        return logits
+
+
+def save_checkpoint(model: PromoterTransformer, cfg: Config, path: Path) -> None:
+    """Write weights plus the config needed to rebuild the architecture."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save({"config": asdict(cfg), "state_dict": model.state_dict()}, path)
+
+
+def load_checkpoint(path: Path) -> tuple[PromoterTransformer, Config]:
+    """Rebuild a model from a checkpoint written by save_checkpoint."""
+    blob = torch.load(path, map_location="cpu", weights_only=False)
+    cfg = Config(**blob["config"])
+    model = PromoterTransformer(cfg)
+    model.load_state_dict(blob["state_dict"])
+    model.eval()
+    return model, cfg

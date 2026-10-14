@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Download E. coli data
+        run: |
+          mkdir -p data
+          curl -sL "https://archive.ics.uci.edu/static/public/67/molecular+biology+promoter+gene+sequences.zip" -o data/uci67.zip
+          cd data && unzip -o uci67.zip >/dev/null
+
+      - name: Ruff
+        run: ruff check src tests
+
+      - name: Mypy
+        run: python -m mypy --strict src
+
+      - name: Tests
+        run: python -m pytest tests/ -q
