@@ -9,3 +9,4 @@ __pycache__/
 .qodo/
 .github/instructions/
 checkpoints/*.pt
+checkpoints/*.tmp

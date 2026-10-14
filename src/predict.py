@@ -16,7 +16,7 @@ from pathlib import Path
 
 import torch
 
-from src.model import Config, load_checkpoint
+from src.model import Config, PromoterTransformer, load_checkpoint
 
 # Human path: ACGT plus a dedicated unknown id for N and other ambiguous codes.
 # E. coli checkpoints use the 4-letter acgt vocabulary with no unknown slot.
@@ -42,14 +42,25 @@ def encode(seq: str, cfg: Config) -> torch.Tensor:
     return torch.tensor([ids], dtype=torch.long)
 
 
-def predict(checkpoint: Path, seq: str) -> tuple[int, float]:
-    """Return (predicted_class, promoter_probability) for one sequence."""
-    model, cfg = load_checkpoint(checkpoint)
+def predict_with_model(
+    model: PromoterTransformer, cfg: Config, seq: str
+) -> tuple[int, float]:
+    """Classify one sequence with an already-loaded model.
+
+    Separated from predict so a caller classifying many sequences loads the
+    checkpoint once and reuses the model instead of paying the deserialization
+    cost per sequence.
+    """
     x = encode(seq, cfg)
     with torch.no_grad():
         probs = torch.softmax(model(x), dim=1)[0]
-    promoter_prob = float(probs[1])
-    return int(probs.argmax()), promoter_prob
+    return int(probs.argmax()), float(probs[1])
+
+
+def predict(checkpoint: Path, seq: str) -> tuple[int, float]:
+    """Return (predicted_class, promoter_probability) for one sequence."""
+    model, cfg = load_checkpoint(checkpoint)
+    return predict_with_model(model, cfg, seq)
 
 
 def main() -> None:

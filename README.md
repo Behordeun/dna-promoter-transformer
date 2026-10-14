@@ -20,7 +20,7 @@ Human non-TATA promoters (genomic-benchmarks, 36,131 sequences), trained on the 
 
 | Metric | Value |
 | --- | --- |
-| Accuracy | 0.884 |
+| Accuracy | 0.885 |
 | Precision | 0.927 |
 | Recall | 0.855 |
 | F1 | 0.890 |

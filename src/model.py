@@ -83,12 +83,50 @@ class PromoterTransformer(nn.Module):
         return logits
 
 
+def _validate_config(cfg: Config) -> None:
+    """Reject architecture dimensions outside sane bounds.
+
+    A checkpoint carries its own Config, so loading one rebuilds the model from
+    numbers the file supplies. Without a ceiling, a crafted checkpoint could ask
+    for billions of embedding rows or hundreds of layers and exhaust memory
+    before any weights are even read. These limits sit far above anything this
+    task needs while still ruling out that case.
+    """
+    checks = (
+        ("seq_len", cfg.seq_len, 1, 100_000),
+        ("vocab_size", cfg.vocab_size, 1, 1_000),
+        ("d_model", cfg.d_model, 1, 8_192),
+        ("n_heads", cfg.n_heads, 1, 256),
+        ("n_layers", cfg.n_layers, 1, 128),
+        ("d_ff", cfg.d_ff, 1, 65_536),
+    )
+    for name, value, low, high in checks:
+        if not isinstance(value, int) or not low <= value <= high:
+            raise ValueError(
+                f"checkpoint config field {name}={value!r} is outside the "
+                f"allowed range [{low}, {high}]"
+            )
+    if cfg.d_model % cfg.n_heads != 0:
+        raise ValueError(
+            f"d_model={cfg.d_model} must be divisible by n_heads={cfg.n_heads}"
+        )
+
+
 def save_checkpoint(model: PromoterTransformer, cfg: Config, path: Path) -> None:
     """Write weights plus the config needed to rebuild the architecture.
 
     The state dict is snapshotted to CPU here so saving never moves the
-    caller's model off its training device.
+    caller's model off its training device. The config is checked against the
+    model's actual embedding so a mismatched cfg cannot be persisted and then
+    fail to load later.
     """
+    embed_rows, embed_dim = model.token_embed.weight.shape
+    if (embed_rows, embed_dim) != (cfg.vocab_size, cfg.d_model):
+        raise ValueError(
+            f"cfg (vocab_size={cfg.vocab_size}, d_model={cfg.d_model}) does not "
+            f"match the model embedding ({embed_rows}, {embed_dim})"
+        )
+    _validate_config(cfg)
     path.parent.mkdir(parents=True, exist_ok=True)
     cpu_state = {k: v.cpu() for k, v in model.state_dict().items()}
     torch.save({"config": asdict(cfg), "state_dict": cpu_state}, path)
@@ -98,6 +136,7 @@ def load_checkpoint(path: Path) -> tuple[PromoterTransformer, Config]:
     """Rebuild a model from a checkpoint written by save_checkpoint."""
     blob = torch.load(path, map_location="cpu", weights_only=True)
     cfg = Config(**blob["config"])
+    _validate_config(cfg)
     model = PromoterTransformer(cfg)
     model.load_state_dict(blob["state_dict"])
     model.eval()

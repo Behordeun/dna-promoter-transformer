@@ -110,9 +110,18 @@ def train_human(
 
     if checkpoint_dir is not None:
         ckpt = checkpoint_dir / "human.pt"
-        save_checkpoint(model, cfg, ckpt)
-        (checkpoint_dir / "metrics.json").write_text(json.dumps(test, indent=2))
-        print(f"saved checkpoint to {ckpt} and metrics to {checkpoint_dir / 'metrics.json'}")
+        metrics = checkpoint_dir / "metrics.json"
+        # Write both artifacts to temp siblings first, then rename into place
+        # once both have been written. An interrupt or a full disk during the
+        # write leaves the temp files behind rather than a half-written
+        # checkpoint or a metrics.json that describes a different model.
+        ckpt_tmp = ckpt.with_suffix(ckpt.suffix + ".tmp")
+        metrics_tmp = metrics.with_suffix(metrics.suffix + ".tmp")
+        save_checkpoint(model, cfg, ckpt_tmp)
+        metrics_tmp.write_text(json.dumps(test, indent=2))
+        ckpt_tmp.replace(ckpt)
+        metrics_tmp.replace(metrics)
+        print(f"saved checkpoint to {ckpt} and metrics to {metrics}")
 
     return test
 
